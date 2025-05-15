@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tim's PDF Merger</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-image: linear-gradient(120deg, #f8fafc 0%, #eef2f7 100%);
+        }
+        .file-preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 1.25rem;
+        }
+        .preview-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 8px 16px -4px rgba(27, 39, 53, 0.08), 0 0 1px 0 rgba(27, 39, 53, 0.05);
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.25s ease-in-out, box-shadow 0.25s ease-in-out, opacity 0.2s ease-in-out;
+            cursor: grab; 
+        }
+        .preview-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 12px 24px -6px rgba(27, 39, 53, 0.12), 0 0 1px 0 rgba(27, 39, 53, 0.06);
+        }
+        .preview-card.dragging { 
+            opacity: 0.5;
+            cursor: grabbing;
+            box-shadow: 0 15px 30px -10px rgba(27, 39, 53, 0.2);
+            transform: scale(1.05);
+        }
+        .preview-card .canvas-container {
+            width: 100%;
+            padding-top: 141.42%;
+            position: relative;
+            background-color: #f1f5f9;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .preview-card canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .preview-card .file-info {
+            padding: 1rem;
+            text-align: center;
+            flex-grow: 1; 
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between; 
+        }
+        .preview-card .file-name {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #334155;
+            word-break: break-all; 
+            margin-bottom: 0.75rem;
+            line-height: 1.4;
+            max-height: 3.9em;
+            overflow: hidden;
+        }
+        .preview-card .action-buttons-card button {
+            padding: 0.375rem;
+            border-radius: 9999px;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+            cursor: pointer; 
+        }
+        .preview-card .action-buttons-card button:hover {
+            background-color: #eef2ff;
+        }
+         .preview-card .action-buttons-card button.remove-btn:hover {
+            background-color: #ffe4e6;
+        }
+        .drop-placeholder {
+            background-color: #e0e7ff; 
+            border: 2px dashed #6366f1; 
+            border-radius: 0.75rem;
+            min-height: 150px; 
+            opacity: 0.7;
+        }
+        .drag-over-card { 
+             border-color: #4f46e5 !important; 
+             box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3) !important;
+        }
+        .drag-over { 
+            border-color: #4f46e5; 
+            background-color: #eef2ff; 
+        }
+        .main-card {
+             background-color: #ffffff;
+             border-radius: 1rem; 
+             box-shadow: 0 20px 40px -10px rgba(27, 39, 53, 0.1), 0 0 2px 0 rgba(27, 39, 53, 0.06);
+             border: 1px solid rgba(226, 232, 240, 0.6); 
+        }
+        input:focus, button:focus-visible {
+            outline: 2px solid transparent;
+            outline-offset: 2px;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.4); 
+        }
+        #fileInput:focus + label { 
+             box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.4);
+             border-color: #4f46e5; 
+        }
+        #noFilesMessageGrid {
+            grid-column: 1 / -1; 
+            text-align: center;
+            padding: 2.5rem; 
+            color: #64748b; 
+            font-style: italic;
+            background-color: #f8fafc; 
+            border-radius: 0.75rem; 
+            border: 1px dashed #cbd5e1; 
+        }
+        .btn-primary {
+            background-color: #4f46e5; 
+            color: white;
+            font-weight: 600; 
+            padding: 0.875rem 1.75rem; 
+            border-radius: 0.5rem; 
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2), 0 2px 4px -2px rgba(79, 70, 229, 0.12);
+            transition: all 0.25s ease-in-out;
+        }
+        .btn-primary:hover {
+            background-color: #4338ca; 
+            box-shadow: 0 6px 12px -2px rgba(79, 70, 229, 0.3), 0 3px 7px -3px rgba(79, 70, 229, 0.15);
+            transform: translateY(-1px);
+        }
+        .btn-primary:disabled {
+            background-color: #a5b4fc; 
+            opacity: 0.7;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        .btn-secondary {
+            background-color: #e2e8f0; 
+            color: #334155; 
+            font-weight: 600; 
+            padding: 0.875rem 1.75rem; 
+            border-radius: 0.5rem; 
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-secondary:hover {
+            background-color: #cbd5e1; 
+            color: #1e293b; 
+        }
+         .btn-secondary:disabled {
+            background-color: #f1f5f9; 
+            color: #94a3b8; 
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #4f46e5;
+            animation: spin 1s ease infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .converting-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+         .converting-overlay p {
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            color: #4f46e5;
+            font-weight: 500;
+        }
+        /* #docxContainer is removed */
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4 selection:bg-indigo-500 selection:text-white">
+
+    <div class="main-card p-6 md:p-10 w-full max-w-4xl"> 
+        <header class="mb-10 text-center"> 
+            <h1 class="text-4xl md:text-5xl font-extrabold text-indigo-700">Tim's PDF Merger</h1>
+            <p class="text-slate-600 mt-3 text-lg">Elegantly combine your PDFs and images into a single document.</p>
+        </header>
+
+        <main>
+            <div id="dropZone" class="mb-8 border-2 border-dashed border-slate-300 rounded-xl p-10 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-colors duration-300 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-300">
+                <input type="file" id="fileInput" multiple accept=".pdf,image/jpeg,image/jpg,image/png,image/heic,image/heif,.heic,.heif" class="hidden">
+                <label for="fileInput" class="cursor-pointer">
+                    <svg class="w-16 h-16 mx-auto text-indigo-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L3 10.25V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v2.75l-6.75 6.75M9.75 17l6.75-6.75M9.75 17V10.5m6.75 6.75V10.5m0 0L12 15l-4.25-4.5"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15V3m0 0L9.75 5.25M12 3l2.25 2.25"></path></svg>
+                    <p class="text-indigo-700 font-semibold text-lg">Drag & Drop PDF or Image Files Here</p>
+                    <p class="text-sm text-slate-500 mt-1">(.pdf, .jpg, .png, .heic) or click to browse</p>
+                </label>
+            </div>
+
+            <div id="selectedFilesContainer" class="mb-8">
+                <h2 class="text-xl font-semibold text-indigo-700 mb-4">Your Selected Files:</h2>
+                <div id="fileList" class="file-preview-grid bg-indigo-50/50 p-5 rounded-xl shadow-inner min-h-[220px]">
+                    <div id="noFilesMessageGrid" class="hidden">No files selected yet. Add some PDFs or images to see their previews.</div>
+                </div>
+                <p class="text-xs text-slate-500 mt-4">Drag and drop to reorder, or use <span class="font-semibold text-indigo-600">←</span> and <span class="font-semibold text-indigo-600">→</span> buttons.</p>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                <button id="mergeButton" class="btn-primary w-full sm:w-auto flex items-center justify-center" disabled>
+                    <svg class="w-5 h-5 mr-2.5" fill="currentColor" viewBox="0 0 20 20"><path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.83A4 4 0 0 1 16.88 9.1zM15 12H9.008V9.03L15 12zM5 10.91C5 10.41 5.41 10 5.91 10H12v2H5.91A.91.91 0 0 1 5 10.91z"></path></svg>
+                    Merge Files
+                </button>
+                <button id="clearButton" class="btn-secondary w-full sm:w-auto flex items-center justify-center" disabled>
+                     <svg class="w-5 h-5 mr-2.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                    Clear All Files
+                </button>
+            </div>
+
+            <div id="statusMessage" class="mt-8 text-base text-slate-700"></div>
+            <div id="downloadLinkContainer" class="mt-5"></div>
+        </main>
+
+        <footer class="mt-12 text-center text-sm text-slate-500">
+            <p>&copy; <span id="currentYear"></span> Tim's PDF Merger. Crafted with care.</p>
+        </footer>
+    </div>
+    <script>
+        const { PDFDocument, rgb, StandardFonts, PageSizes } = PDFLib; 
+        // docx and html2canvas are no longer used
+
+        const fileInput = document.getElementById('fileInput');
+        const dropZone = document.getElementById('dropZone');
+        const fileListContainer = document.getElementById('fileList'); 
+        const noFilesMessageGrid = document.getElementById('noFilesMessageGrid');
+        const mergeButton = document.getElementById('mergeButton');
+        const clearButton = document.getElementById('clearButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const downloadLinkContainer = document.getElementById('downloadLinkContainer');
+        // const docxRenderContainer = document.getElementById('docxContainer'); // Removed
+        document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+        let selectedPDFFiles = []; 
+        let draggedItemIndex = null; 
+        let placeholder = null; 
+
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        async function handleFiles(incomingFiles) {
+            statusMessage.textContent = 'Processing files...';
+            statusMessage.className = 'mt-8 text-base text-indigo-600 font-medium animate-pulse';
+            let promises = [];
+            let successfullyProcessedFiles = []; 
+            let errorMessages = [];
+
+            for (const file of incomingFiles) {
+                const fileType = file.type.toLowerCase();
+                const fileName = file.name;
+                const fileExtension = fileName.split('.').pop().toLowerCase();
+
+                console.log(`Processing file: ${fileName}, Type: ${fileType}, Extension: ${fileExtension}`);
+
+                const tempCardId = `temp-card-${Date.now()}-${Math.random().toString(36).substring(2,7)}`;
+                createTemporaryLoadingCard(tempCardId, fileName);
+
+                let processPromise;
+                if (fileType === "application/pdf") {
+                    processPromise = Promise.resolve(file);
+                } else if (fileType === "image/jpeg" || fileType === "image/jpg") {
+                    processPromise = convertImageToPdf(file, 'jpeg');
+                } else if (fileType === "image/png") { 
+                     processPromise = convertImageToPdf(file, 'png');
+                } else if (fileType === "image/heic" || fileType === "image/heif" || 
+                           ((fileType === "" || fileType === "application/octet-stream") && (fileExtension === "heic" || fileExtension === "heif"))) {
+                    console.log(`Attempting HEIC/HEIF conversion for ${fileName} based on type/extension.`);
+                    processPromise = convertHeicToPdf(file);
+                } 
+                // Removed DOCX handling block
+                else {
+                    console.log(`Unsupported file: ${fileName}, Type: ${fileType}, Extension: ${fileExtension}`);
+                    errorMessages.push(`'${fileName}' is an unsupported file type.`);
+                    removeTemporaryLoadingCard(tempCardId);
+                    continue; 
+                }
+
+                promises.push(
+                    processPromise
+                        .then(processedFile => ({ status: 'fulfilled', value: processedFile, originalName: fileName }))
+                        .catch(err => ({ status: 'rejected', reason: err, originalName: fileName })) 
+                        .finally(() => removeTemporaryLoadingCard(tempCardId))
+                );
+            }
+
+            const results = await Promise.all(promises); 
+
+            results.forEach(result => {
+                if (result.status === 'fulfilled' && result.value) {
+                    successfullyProcessedFiles.push(result.value);
+                } else if (result.status === 'rejected') {
+                    const err = result.reason; 
+                    const failedFileName = result.originalName || "An unknown file";
+                    const errMsg = (err && err.message) ? err.message : "Unknown conversion error. Check console for details.";
+                    console.error(`Error processing ${failedFileName} (in handleFiles' results loop):`, err); 
+                    errorMessages.push(`Error with ${failedFileName}: ${errMsg}`);
+                }
+            });
+            
+            selectedPDFFiles = [...selectedPDFFiles, ...successfullyProcessedFiles];
+            statusMessage.classList.remove('animate-pulse');
+
+            if (errorMessages.length > 0) {
+                statusMessage.textContent = errorMessages.join(' ');
+                statusMessage.className = 'mt-8 text-base text-rose-600 font-medium';
+                if (successfullyProcessedFiles.length > 0) {
+                    statusMessage.textContent += ` However, ${successfullyProcessedFiles.length} other file(s) were added.`;
+                }
+            } else if (successfullyProcessedFiles.length > 0) {
+                 statusMessage.textContent = `${successfullyProcessedFiles.length} file(s) processed and added successfully.`;
+                 statusMessage.className = 'mt-8 text-base text-emerald-600 font-medium';
+            } else if (incomingFiles.length > 0) { 
+                 statusMessage.textContent = 'No new supported files were processed or added.';
+                 statusMessage.className = 'mt-8 text-base text-amber-600 font-medium';
+            } else { 
+                statusMessage.textContent = ''; 
+            }
+
+            downloadLinkContainer.innerHTML = '';
+            updateFileListUI();
+            updateButtonStates();
+            fileInput.value = ''; 
+        }
+
+        function createTemporaryLoadingCard(id, fileName) {
+            if (noFilesMessageGrid.parentElement) { 
+                noFilesMessageGrid.classList.add('hidden');
+            }
+            const card = document.createElement('div');
+            card.id = id;
+            card.className = 'preview-card relative'; 
+            
+            const overlay = document.createElement('div');
+            overlay.className = 'converting-overlay';
+            
+            const spinner = document.createElement('div');
+            spinner.className = 'spinner';
+            overlay.appendChild(spinner);
+
+            const overlayText = document.createElement('p');
+            overlayText.textContent = 'Processing...';
+            overlay.appendChild(overlayText);
+            
+            card.appendChild(overlay);
+
+            const fileInfoDiv = document.createElement('div');
+            fileInfoDiv.className = 'file-info opacity-50'; 
+
+            const fileNameSpan = document.createElement('p');
+            fileNameSpan.className = 'file-name';
+            fileNameSpan.textContent = fileName;
+            fileInfoDiv.appendChild(fileNameSpan);
+            card.appendChild(fileInfoDiv);
+
+            fileListContainer.appendChild(card);
+        }
+
+        function removeTemporaryLoadingCard(id) {
+            const card = document.getElementById(id);
+            if (card) {
+                card.remove();
+            }
+            if (fileListContainer.querySelectorAll('.preview-card').length === 0 && 
+                fileListContainer.querySelectorAll('.converting-overlay').length === 0) { 
+                if (selectedPDFFiles.length === 0) { 
+                     noFilesMessageGrid.classList.remove('hidden');
+                }
+            }
+        }
+
+        async function convertImageToPdf(imageFile, imageType = 'jpeg') { 
+            const arrayBuffer = await imageFile.arrayBuffer();
+            const pdfDoc = await PDFDocument.create();
+            let embeddedImage;
+            try {
+                if (imageType === 'jpeg') {
+                    embeddedImage = await pdfDoc.embedJpg(arrayBuffer);
+                } else if (imageType === 'png') {
+                    embeddedImage = await pdfDoc.embedPng(arrayBuffer);
+                } else {
+                    console.error('Unsupported image type for PDF conversion:', imageType);
+                    throw new Error(`Unsupported image type: ${imageType}`);
+                }
+            } catch (embedError) {
+                console.error(`Failed to embed ${imageType} image ${imageFile.name}:`, embedError);
+                throw new Error(`Could not process ${imageFile.name} as ${imageType}. The file might be corrupted or in an unexpected format.`);
+            }
+            
+            const A4_WIDTH = PageSizes.A4[0];
+            const A4_HEIGHT = PageSizes.A4[1];
+            const imageWidth = embeddedImage.width;
+            const imageHeight = embeddedImage.height;
+            const widthRatio = A4_WIDTH / imageWidth;
+            const heightRatio = A4_HEIGHT / imageHeight;
+            const scaleFactor = Math.min(widthRatio, heightRatio, 1); 
+            const scaledWidth = imageWidth * scaleFactor;
+            const scaledHeight = imageHeight * scaleFactor;
+            const page = pdfDoc.addPage(PageSizes.A4);
+            const x = (A4_WIDTH - scaledWidth) / 2;
+            const y = (A4_HEIGHT - scaledHeight) / 2;
+
+            page.drawImage(embeddedImage, { x, y, width: scaledWidth, height: scaledHeight });
+            const pdfBytes = await pdfDoc.save();
+            const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const newFileName = imageFile.name.substring(0, imageFile.name.lastIndexOf('.')) + '.pdf';
+            return new File([pdfBlob], newFileName, { type: 'application/pdf', lastModified: Date.now() });
+        }
+
+        async function convertHeicToPdf(heicFile) {
+            console.log(`Attempting HEIC conversion for: ${heicFile.name}`);
+            try {
+                const convertedBlob = await heic2any({
+                    blob: heicFile,
+                    toType: "image/jpeg",
+                    quality: 0.9, 
+                });
+                
+                console.log("HEIC convertedBlob (from heic2any):", convertedBlob);
+                const finalBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+
+                if (!finalBlob || typeof finalBlob.size === 'undefined' || finalBlob.size === 0) { 
+                    console.error("HEIC conversion (heic2any) resulted in an invalid or empty blob for:", heicFile.name, "Converted blob:", finalBlob);
+                    throw new Error(`HEIC processing for ${heicFile.name} did not produce a valid image output from heic2any.`);
+                }
+                if (typeof finalBlob.type === 'undefined' || !finalBlob.type.startsWith('image/')) {
+                     console.warn(`HEIC conversion for ${heicFile.name} produced blob with unexpected type: ${finalBlob.type}. This might indicate a conversion problem.`);
+                }
+
+                const tempImageFile = new File([finalBlob], `${heicFile.name}.jpg`, { type: "image/jpeg", lastModified: Date.now() });
+                return await convertImageToPdf(tempImageFile, 'jpeg');
+            } catch (err) {
+                console.error(`HEIC conversion process failed for ${heicFile.name}:`, err);
+                let specificMessage = `HEIC conversion failed for ${heicFile.name}.`;
+                if (err.message) {
+                    specificMessage += ` Details: ${err.message}`;
+                } else if (typeof err === 'string') {
+                    specificMessage += ` Details: ${err}`;
+                } else {
+                    specificMessage += ` An unknown error occurred during HEIC processing. The file might be unsupported by the HEIC conversion library.`;
+                }
+                throw new Error(specificMessage);
+            }
+        }
+
+        // Removed convertDocxToPdf function
+
+        async function renderPdfPreview(file, canvasElement) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                const page = await pdfDoc.getPage(1); 
+
+                const containerWidth = canvasElement.parentElement.clientWidth;
+                const containerHeight = canvasElement.parentElement.clientHeight;
+                const pageViewportUnscaled = page.getViewport({ scale: 1 });
+                
+                const scaleX = containerWidth / pageViewportUnscaled.width;
+                const scaleY = containerHeight / pageViewportUnscaled.height;
+                const actualScale = Math.min(scaleX, scaleY, 1.5); 
+
+                const viewport = page.getViewport({ scale: actualScale });
+                const context = canvasElement.getContext('2d');
+                const dpr = window.devicePixelRatio || 1;
+
+                canvasElement.width = Math.floor(viewport.width * dpr);
+                canvasElement.height = Math.floor(viewport.height * dpr);
+                context.scale(dpr, dpr);
+
+                const renderContext = { canvasContext: context, viewport: viewport };
+                await page.render(renderContext).promise;
+                canvasElement.parentElement.style.backgroundColor = '#f1f5f9';
+            } catch (error) {
+                console.error(`Error rendering PDF preview for ${file.name}:`, error);
+                const ctx = canvasElement.getContext('2d');
+                const dpr = window.devicePixelRatio || 1;
+                const displayWidth = canvasElement.parentElement.clientWidth || 120; 
+                const displayHeight = canvasElement.parentElement.clientHeight || 170;
+
+                canvasElement.width = displayWidth * dpr;
+                canvasElement.height = displayHeight * dpr;
+                ctx.scale(dpr, dpr); 
+                ctx.clearRect(0, 0, displayWidth, displayHeight); 
+                
+                canvasElement.parentElement.style.backgroundColor = '#ffe4e6'; 
+                ctx.font = "bold 14px Inter"; 
+                ctx.fillStyle = "#be123c"; 
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle"; 
+                
+                ctx.fillText("Preview", displayWidth / 2, displayHeight / 2 - 8);
+                ctx.fillText("Unavailable", displayWidth / 2, displayHeight / 2 + 8);
+            }
+        }
+        
+        function createPlaceholder() {
+            if (!placeholder) {
+                placeholder = document.createElement('div');
+                placeholder.className = 'drop-placeholder';
+            }
+            return placeholder;
+        }
+
+        function onDragStart(event, index) {
+            if (event.target.closest('button')) {
+                event.preventDefault();
+                return;
+            }
+            draggedItemIndex = index;
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', index); 
+            setTimeout(() => {
+                event.target.closest('.preview-card').classList.add('dragging');
+            }, 0);
+            
+            const ph = createPlaceholder();
+            const cardElement = event.target.closest('.preview-card');
+            ph.style.width = cardElement.offsetWidth + 'px';
+            ph.style.height = cardElement.offsetHeight + 'px';
+        }
+
+        function onDragOver(event) {
+            event.preventDefault(); 
+            event.dataTransfer.dropEffect = 'move';
+            
+            const targetCard = event.target.closest('.preview-card');
+            if (targetCard && !targetCard.classList.contains('dragging')) {
+                targetCard.classList.add('drag-over-card');
+                const ph = createPlaceholder();
+                const rect = targetCard.getBoundingClientRect();
+                const offsetX = event.clientX - rect.left;
+                if (offsetX < rect.width / 2) {
+                    fileListContainer.insertBefore(ph, targetCard);
+                } else {
+                    fileListContainer.insertBefore(ph, targetCard.nextSibling);
+                }
+            } else if (!targetCard && placeholder && placeholder.parentElement) {
+                const gridRect = fileListContainer.getBoundingClientRect();
+                if(event.clientY > gridRect.top && event.clientY < gridRect.bottom &&
+                   event.clientX > gridRect.left && event.clientX < gridRect.right) {
+                }
+            }
+        }
+
+        function onDragEnter(event) {
+            event.preventDefault();
+        }
+        
+        function onDragLeave(event) {
+            const targetCard = event.target.closest('.preview-card');
+            if (targetCard) {
+                targetCard.classList.remove('drag-over-card');
+            }
+            if (placeholder && placeholder.parentElement === fileListContainer && !fileListContainer.contains(event.relatedTarget)) {
+                 placeholder.remove();
+            }
+        }
+
+        function onDrop(event) {
+            event.preventDefault();
+            const targetCard = event.target.closest('.preview-card');
+            let droppedAtIndex = -1;
+
+            if (targetCard && !targetCard.classList.contains('dragging')) {
+                const allCards = Array.from(fileListContainer.querySelectorAll('.preview-card:not(.dragging)'));
+                droppedAtIndex = allCards.indexOf(targetCard);
+                if (placeholder && placeholder.previousSibling === targetCard) { 
+                    droppedAtIndex++;
+                }
+            } else if (placeholder && placeholder.parentElement) { 
+                let placeholderActualIndex = 0;
+                for(let i=0; i < fileListContainer.children.length; i++) {
+                    if(fileListContainer.children[i] === placeholder) {
+                        placeholderActualIndex = i;
+                        break;
+                    }
+                }
+                let count = 0;
+                for(let i=0; i < placeholderActualIndex; i++) {
+                    if(fileListContainer.children[i].classList.contains('preview-card') && !fileListContainer.children[i].classList.contains('dragging')) {
+                        count++;
+                    }
+                }
+                droppedAtIndex = count;
+            }
+
+            if (draggedItemIndex !== null && droppedAtIndex !== -1 && draggedItemIndex !== droppedAtIndex) {
+                const itemToMove = selectedPDFFiles.splice(draggedItemIndex, 1)[0];
+                const adjustedDropIndex = (draggedItemIndex < droppedAtIndex && droppedAtIndex > 0) ? droppedAtIndex -1 : droppedAtIndex;
+                const finalDropIndex = Math.max(0, Math.min(selectedPDFFiles.length, adjustedDropIndex));
+                selectedPDFFiles.splice(finalDropIndex, 0, itemToMove);
+                
+                statusMessage.textContent = 'File order updated by drag & drop.';
+                statusMessage.className = 'mt-8 text-base text-slate-700';
+            }
+            
+            cleanupDragDrop();
+            updateFileListUI(); 
+            updateButtonStates();
+        }
+
+        function onDragEnd(event) {
+            cleanupDragDrop();
+        }
+
+        function cleanupDragDrop() {
+            const draggingCard = fileListContainer.querySelector('.dragging');
+            if (draggingCard) {
+                draggingCard.classList.remove('dragging');
+            }
+            const overCards = fileListContainer.querySelectorAll('.drag-over-card');
+            overCards.forEach(card => card.classList.remove('drag-over-card'));
+
+            if (placeholder && placeholder.parentElement) {
+                placeholder.remove();
+            }
+            draggedItemIndex = null;
+        }
+
+
+        function updateFileListUI() {
+            const currentScrollTop = fileListContainer.scrollTop; 
+            fileListContainer.innerHTML = ''; 
+
+            if (selectedPDFFiles.length === 0 && fileListContainer.querySelectorAll('.converting-overlay').length === 0) {
+                noFilesMessageGrid.classList.remove('hidden');
+                if (!fileListContainer.contains(noFilesMessageGrid)) {
+                    fileListContainer.appendChild(noFilesMessageGrid);
+                }
+                return;
+            }
+             if (fileListContainer.contains(noFilesMessageGrid)) {
+                 noFilesMessageGrid.classList.add('hidden'); 
+            }
+
+
+            selectedPDFFiles.forEach((file, index) => {
+                const card = document.createElement('div');
+                card.className = 'preview-card';
+                card.draggable = true; 
+                card.dataset.index = index; 
+
+                card.addEventListener('dragstart', (e) => onDragStart(e, index));
+                card.addEventListener('dragend', onDragEnd);
+
+                const canvasContainer = document.createElement('div');
+                canvasContainer.className = 'canvas-container';
+                const canvas = document.createElement('canvas');
+                canvasContainer.appendChild(canvas);
+                card.appendChild(canvasContainer);
+
+                const fileInfoDiv = document.createElement('div');
+                fileInfoDiv.className = 'file-info';
+
+                const fileNameSpan = document.createElement('p');
+                fileNameSpan.className = 'file-name';
+                fileNameSpan.textContent = file.name; 
+                fileInfoDiv.appendChild(fileNameSpan);
+
+                const cardButtonsDiv = document.createElement('div');
+                cardButtonsDiv.className = 'action-buttons-card mt-2';
+
+                const leftButton = document.createElement('button');
+                leftButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 17l-5-5m0 0l5-5m-5 5h12" /></svg>`;
+                leftButton.title = "Move Left";
+                leftButton.classList.add('text-indigo-500', 'hover:text-indigo-700');
+                leftButton.disabled = index === 0;
+                if (leftButton.disabled) leftButton.classList.add('opacity-30', 'cursor-not-allowed', 'hover:bg-transparent');
+                leftButton.addEventListener('click', (e) => { e.stopPropagation(); moveFile(index, index - 1);});
+                cardButtonsDiv.appendChild(leftButton);
+
+                const removeFileButton = document.createElement('button');
+                removeFileButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
+                removeFileButton.title = "Remove file";
+                removeFileButton.classList.add('text-rose-500', 'hover:text-rose-700', 'remove-btn');
+                removeFileButton.addEventListener('click', (e) => { e.stopPropagation(); removeSingleFile(index);});
+                cardButtonsDiv.appendChild(removeFileButton);
+
+                const rightButton = document.createElement('button');
+                rightButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>`;
+                rightButton.title = "Move Right";
+                rightButton.classList.add('text-indigo-500', 'hover:text-indigo-700');
+                rightButton.disabled = index === selectedPDFFiles.length - 1;
+                if (rightButton.disabled) rightButton.classList.add('opacity-30', 'cursor-not-allowed', 'hover:bg-transparent');
+                rightButton.addEventListener('click', (e) => { e.stopPropagation(); moveFile(index, index + 1);});
+                cardButtonsDiv.appendChild(rightButton);
+                
+                fileInfoDiv.appendChild(cardButtonsDiv);
+                card.appendChild(fileInfoDiv);
+                fileListContainer.appendChild(card);
+
+                renderPdfPreview(file, canvas); 
+            });
+            fileListContainer.removeEventListener('dragover', onDragOver); 
+            fileListContainer.removeEventListener('dragenter', onDragEnter);
+            fileListContainer.removeEventListener('dragleave', onDragLeave);
+            fileListContainer.removeEventListener('drop', onDrop);
+
+            fileListContainer.addEventListener('dragover', onDragOver);
+            fileListContainer.addEventListener('dragenter', onDragEnter); 
+            fileListContainer.addEventListener('dragleave', onDragLeave);
+            fileListContainer.addEventListener('drop', onDrop);
+            fileListContainer.scrollTop = currentScrollTop; 
+        }
+        
+        function removeSingleFile(indexToRemove) {
+            selectedPDFFiles.splice(indexToRemove, 1);
+            updateFileListUI();
+            updateButtonStates();
+            statusMessage.textContent = selectedPDFFiles.length === 0 ? 'All files removed.' : 'File removed.';
+            statusMessage.className = 'mt-8 text-base text-slate-700';
+        }
+
+        function moveFile(fromIndex, toIndex) { 
+            if (toIndex < 0 || toIndex >= selectedPDFFiles.length) return;
+            const item = selectedPDFFiles.splice(fromIndex, 1)[0];
+            selectedPDFFiles.splice(toIndex, 0, item);
+            updateFileListUI(); 
+            statusMessage.textContent = 'File order updated.';
+            statusMessage.className = 'mt-8 text-base text-slate-700';
+        }
+
+        function updateButtonStates() {
+            mergeButton.disabled = selectedPDFFiles.length < 2;
+            clearButton.disabled = selectedPDFFiles.length === 0;
+        }
+        
+        clearButton.addEventListener('click', () => {
+            selectedPDFFiles = [];
+            fileInput.value = '';
+            updateFileListUI();
+            updateButtonStates();
+            statusMessage.textContent = 'All files cleared.';
+            statusMessage.className = 'mt-8 text-base text-slate-700';
+            downloadLinkContainer.innerHTML = '';
+        });
+
+        mergeButton.addEventListener('click', async () => {
+            if (selectedPDFFiles.length < 2) {
+                statusMessage.textContent = 'Please select at least two files to merge.';
+                statusMessage.className = 'mt-8 text-base text-amber-600 font-medium';
+                return;
+            }
+
+            statusMessage.textContent = 'Merging files... This may take a moment.';
+            statusMessage.className = 'mt-8 text-base text-indigo-600 font-medium animate-pulse';
+            mergeButton.disabled = true;
+            clearButton.disabled = true;
+            fileListContainer.querySelectorAll('.preview-card button').forEach(btn => btn.disabled = true);
+            fileListContainer.querySelectorAll('.preview-card').forEach(card => card.draggable = false);
+
+            downloadLinkContainer.innerHTML = '';
+
+            try {
+                const mergedPdfDoc = await PDFDocument.create();
+                for (const file of selectedPDFFiles) { 
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdfToMerge = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+                    const copiedPages = await mergedPdfDoc.copyPages(pdfToMerge, pdfToMerge.getPageIndices());
+                    copiedPages.forEach(page => mergedPdfDoc.addPage(page));
+                }
+                const mergedPdfBytes = await mergedPdfDoc.save();
+                const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Tims_merged_document.pdf';
+                a.textContent = 'Download Merged PDF';
+                a.className = 'btn-primary inline-block bg-emerald-500 hover:bg-emerald-600 focus:ring-emerald-400'; 
+                a.style.boxShadow = '0 4px 6px -1px rgba(16, 185, 129, 0.2), 0 2px 4px -2px rgba(16, 185, 129, 0.12)';
+
+                downloadLinkContainer.appendChild(a);
+                statusMessage.textContent = 'Files merged successfully! Your download is ready.';
+                statusMessage.className = 'mt-8 text-base text-emerald-600 font-medium'; 
+            } catch (error) {
+                console.error('Error merging files:', error);
+                statusMessage.textContent = `Error merging files: ${error.message}. Some files might be incompatible.`;
+                statusMessage.className = 'mt-8 text-base text-rose-600 font-medium'; 
+            } finally {
+                statusMessage.classList.remove('animate-pulse');
+                updateButtonStates(); 
+                clearButton.disabled = selectedPDFFiles.length === 0;
+                
+                const cards = fileListContainer.querySelectorAll('.preview-card');
+                cards.forEach((card, index) => {
+                    card.draggable = true; 
+                    const cardButtons = card.querySelectorAll('.action-buttons-card button');
+                    cardButtons.forEach(btn => {
+                        if (btn.title === "Move Left") btn.disabled = index === 0;
+                        else if (btn.title === "Move Right") btn.disabled = index === selectedPDFFiles.length - 1;
+                        else btn.disabled = false; 
+                    });
+                });
+
+                if (statusMessage.classList.contains('text-rose-600') && selectedPDFFiles.length >= 2) {
+                    mergeButton.disabled = false;
+                }
+                if (downloadLinkContainer.querySelector('a')) {
+                    mergeButton.disabled = true; 
+                }
+            }
+        });
+
+        updateFileListUI();
+        updateButtonStates();
+    </script>
+</body>
+</html>
